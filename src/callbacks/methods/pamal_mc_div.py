@@ -26,10 +26,10 @@ class PaMaLMCDiv(PaMaL):
     """PaMaL with Mixed-Curvature processing and diversity regularization.
 
     Architecture:
-        LeNet (subspace by PaMaL) → MC Encoder → ★ L_diverse → MC Decoder → Task Decoders
+        LeNet (subspace by PaMaL) → ★ L_diverse → MC Encoder → MC Decoder → Task Decoders
     
     The MC blocks use stereographic projection (geoopt) with learnable curvatures.
-    Diversity is measured as magnitude diversity: variance of embedding norms across rays.
+    Diversity is measured via magnitude (effective distinct points) on encoder embeddings across rays.
     """
 
     def __init__(

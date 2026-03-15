@@ -14,7 +14,9 @@ Input (1×36×36)
 │  LeNet Encoder (subspace by PaMaL)    │  ← Conv→Conv→FC, mỗi layer có N copies
 │  SubspaceConv, SubspaceLinear         │     trộn bởi ray weights: w = Σ αᵢ·wᵢ
 └──────────────┬────────────────────────┘
-               │ 50-dim embedding
+               │
+               ├──── ★ L_diverse = -Magnitude(z_encoder across rays)
+               │         Magnitude = effective distinct points (magnipy-inspired)
                ▼
 ┌───────────────────────────────────────┐
 │  MC Encoder Block                     │  ← NEW (không bị subspace-ify)
@@ -22,8 +24,6 @@ Input (1×36×36)
 │  → Log₀ → a·z + b·z_curved           │     P=5 subspaces × 10 dims each
 └──────────────┬────────────────────────┘
                │
-               ├──── ★ L_diverse = -Magnitude(z_mc across rays)
-               │         Magnitude = effective distinct points (magnipy-inspired)
                ▼
 ┌───────────────────────────────────────┐
 │  MC Decoder Block                     │  ← NEW (không bị subspace-ify)
@@ -44,7 +44,7 @@ Input (1×36×36)
 |---|---|---|
 | Encoder | SubspaceConv/Linear | SubspaceConv/Linear + MC Block |
 | Latent space | Euclidean only | Mixed-Curvature (κ<0: hyperbolic, κ=0: Euclidean, κ>0: spherical) |
-| Diversity | Không có | Magnitude diversity trên MC embedding |
+| Diversity | Không có | Magnitude diversity trên encoder embedding (trước MC blocks) |
 | Params thêm | — | MC blocks (~10K params), diversity coefficient |
 
 ## Files
@@ -82,7 +82,8 @@ python _multimnist.py method=pamal training.epochs=50 wandb.mode=disabled
 1. **PaMaL subspace**: Mỗi layer có N copies weights, trộn theo ray `w = Σ αᵢ·wᵢ`
 2. **MC blocks**: Project embedding qua multiple curvature spaces (Exp/Log maps)
 3. **Magnitude-based diversity loss** (inspired by [magnipy](https://github.com/aidos-lab/magnipy)):
-   - Cho mỗi sample trong batch, tính pairwise distance giữa MC embeddings của các rays
+   - Tính trên **encoder embeddings** (trước MC blocks), không phải MC embeddings
+   - Cho mỗi sample trong batch, tính pairwise distance giữa encoder embeddings của các rays
    - Xây dựng similarity matrix: `Z_ij = exp(-t · d_ij)`
    - Giải hệ `Z · w = 1` để tìm magnitude weights
    - Magnitude = `sum(w)` = "effective number of distinct points"

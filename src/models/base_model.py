@@ -54,13 +54,13 @@ class SharedBottom(BaseModel):
         else:
             embedding = self.encoder(x, ray=ray)
 
+        # Store encoder embedding for diversity loss (BEFORE MC blocks)
+        if hasattr(self, '_mc_embeddings') and self.training:
+            self._mc_embeddings.append(embedding)
+
         # Mixed-Curvature processing (if attached by PaMaLMCDiv)
         if hasattr(self, 'mc_encoder_block'):
             embedding = self.mc_encoder_block(embedding)
-
-        # Store MC embedding for diversity loss calculation (keep in graph for differentiable loss)
-        if hasattr(self, '_mc_embeddings') and self.training:
-            self._mc_embeddings.append(embedding)
 
         if hasattr(self, 'mc_decoder_block'):
             embedding = self.mc_decoder_block(embedding)
