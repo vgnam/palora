@@ -2,6 +2,7 @@ from .base_model import BaseModel, SharedBottom
 from .factory import (
     MultiLeNetO,
     MultiLeNetR,
+    MixedCurvatureLeNetR,
     MultiTaskMLP,
     SimpleMLP,
     MultiTaskMLPDifferentNumClasses,
@@ -20,6 +21,7 @@ __all__ = [
     #
     "MultiLeNetO",
     "MultiLeNetR",
+    "MixedCurvatureLeNetR",
     "MultiTaskMLP",
     "SimpleMLP",
     "MultiTaskMLPDifferentNumClasses",

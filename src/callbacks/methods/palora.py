@@ -118,6 +118,9 @@ class PaLoRA(ParetoFrontApproximationAlgoCallback):
     def lorafy_model(self, module: nn.Module, name="", keep_original_weights=False):
         kwargs = dict(num_members=self.num_tasks, r=self.r, lora_alpha=self.lora_alpha)
         for name, immediate_child_module in module.named_children():
+            # Skip modules marked as non-lorafyable (e.g. MixedCurvatureBlock, MultiheadAttention)
+            if getattr(immediate_child_module, '_skip_lorafy', False):
+                continue
             if isinstance(immediate_child_module, nn.Conv2d):
                 layer = getattr(module, name)
                 setattr(module, name, PaConv2d.from_module(module=layer, **kwargs))

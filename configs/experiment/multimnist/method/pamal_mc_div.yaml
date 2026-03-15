@@ -1,0 +1,17 @@
+# @package _global_
+
+method:
+  name: pamal_mc_div
+  reinit_flag: true
+  num: 4
+  reg_coefficient: 0
+  diversity_coefficient: 0.1
+  num_subspaces: 5
+  embed_dim: 50
+  inner_method: ls
+
+ray_sampler:
+  name: annealing_deterministic
+  _target_: src.callbacks.methods.utils.samplers.AnnealingSampler
+  mul: 5
+  epsilon: 0.01

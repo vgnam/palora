@@ -7,7 +7,7 @@ validate_models: 11
 reinit_flag: true
 
 # multi-forward hyperparameters
-num: 1 # referred to as window in the paper
+num: 4 # referred to as window in the paper
 reg_coefficient: 0
 
 # loss and gradient balancing

@@ -14,6 +14,7 @@ from .palora import PaLoRA, PaLoRA_GB, PaLoRA_LB, PaLoRAFull
 
 #
 from .pamal import PaMaL, PaMaL_GB, PaMaL_LB
+from .pamal_mc_div import PaMaLMCDiv
 from .pcgrad import PCGrad
 from .rlw import RandomLossWeighting
 from .si import ScaleInvariantLinearScalarization
@@ -44,6 +45,7 @@ METHODS = dict(
     pamal=PaMaL,
     pamal_lb=PaMaL_LB,
     pamal_gb=PaMaL_GB,
+    pamal_mc_div=PaMaLMCDiv,
     palora=PaLoRA,
     palora_lb=PaLoRA_LB,
     palora_gb=PaLoRA_GB,
@@ -61,6 +63,7 @@ PFL_METHODS = dict(
     pamal=PaMaL,
     pamal_lb=PaMaL_LB,
     pamal_gb=PaMaL_GB,
+    pamal_mc_div=PaMaLMCDiv,
     palora=PaLoRA,
     palora_lb=PaLoRA_LB,
     palora_gb=PaLoRA_GB,
@@ -91,6 +94,9 @@ def get_method(name, num_tasks, **kwargs) -> AlgoCallback:
             return PaLoRAFull(num_tasks, **kwargs)
         else:
             raise ValueError(f"Unknown inner method {inner_method}")
+
+    if name == "pamal_mc_div":
+        return PaMaLMCDiv(num_tasks, **kwargs)
 
     if "pamal" in name:
         inner_method = kwargs.get("inner_method")

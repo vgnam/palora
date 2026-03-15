@@ -1,5 +1,6 @@
 import copy
 import json
+import logging
 import os
 from typing import TYPE_CHECKING
 
@@ -117,7 +118,7 @@ def show_points(
     fig = plt.figure(figsize=figsize)
     ax = fig.add_subplot(projection="3d")
     points, _ = meshzoo.triangle(num_points)
-    print("num points", points.shape)
+    logging.info(f"num points: {points.shape}")
     points = points.T
 
     np.save(f"vpoints_{prefix}_{epoch}.npy", vpoints)
@@ -151,7 +152,7 @@ def show_points(
     filename = log_name + f"-{epoch}.png"
     html_filename = log_name + f"-{epoch}.html"
     plt.savefig(filename, bbox_inches="tight")
-    print(f"Saving {os.path.abspath(filename)}")
+    logging.info(f"Saving {os.path.abspath(filename)}")
     wandb.log(
         {
             "epoch": epoch,
@@ -169,7 +170,7 @@ def show_points(
     )
 
     fig.write_html(html_filename)
-    print(f"Saving {os.path.abspath(html_filename)} in {os.path.pardir}")
+    logging.info(f"Saving {os.path.abspath(html_filename)} in {os.path.pardir}")
     # Add Plotly figure as HTML file into Table
     # Create a table
     # table = wandb.Table(columns=["plotly_figure"])
@@ -220,7 +221,7 @@ class ParetoFrontVisualizer3dCallback(Callback):
         population_results = {}
 
         for x_label, y_label, z_label in self.pairs:
-            print(f"Plotting {x_label} vs {y_label} vs {z_label}")
+            logging.info(f"Plotting {x_label} vs {y_label} vs {z_label}")
             x = self.extract_metric(results, x_label)
             y = self.extract_metric(results, y_label)
             z = self.extract_metric(results, z_label)
@@ -244,7 +245,7 @@ class ParetoFrontVisualizer3dCallback(Callback):
                 hypervolume = compute_hypervolume(
                     np.array([x, y, z]).T, xmax=MAPPING[x_label], ymax=MAPPING[y_label], zmax=MAPPING[z_label]
                 )
-                print(f"Hypervolume: {hypervolume}")
+                logging.info(f"Hypervolume: {hypervolume}")
 
                 points = np.array([x, y, z]).T
                 num_non_dominated = pareto_front(points, maximize=False)
@@ -261,7 +262,7 @@ class ParetoFrontVisualizer3dCallback(Callback):
                             for label in ["acc/Task-1", "acc/Task-2", "acc/Task-3"]
                         ]
                     )
-                    print("New metric", self.new_metric)
+                    logging.info(f"New metric: {self.new_metric}")
                 if trainer.benchmark.name == "UTKFace":
                     # self.new_metric = num_non_dominated + sum(
                     #     [
@@ -269,7 +270,7 @@ class ParetoFrontVisualizer3dCallback(Callback):
                     #         for label in ["acc/race", "acc/gender", "acc/Task-3"]
                     #     ]
                     # )
-                    print("New metric", self.new_metric)
+                    logging.info(f"New metric: {self.new_metric}")
 
                 _prefix = prefix.replace("/", "")
                 wandb.log(
@@ -294,7 +295,7 @@ class ParetoFrontVisualizer3dCallback(Callback):
                 population_results["hypervolume"] = hypervolume
                 population_results["num_non_dominated"] = num_non_dominated
 
-                print(population_results)
+                logging.info(f"Population results: {population_results}")
 
         return population_results
 

@@ -128,7 +128,6 @@ dmypy.json
 
 
 # USER DEFINED
-*.ipynb
 *.pkl
 *.pth
 *.pdf

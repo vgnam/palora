@@ -17,7 +17,7 @@ optimizer:
   name: Adam
   lr: 0.001
 training:
-  epochs: 10
+  epochs: 100
 
 
 # only used for the experiment on resuming

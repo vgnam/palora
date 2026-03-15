@@ -21,6 +21,7 @@ from src.callbacks.utils.save_model import SaveModelCallback
 from src.datasets import MultiMnistDataModule
 from src.models.base_model import SharedBottom
 from src.models.factory.lenet import MultiLeNetO, MultiLeNetR
+from src.models.factory.mixed_curvature_lenet import MixedCurvatureLeNetR
 from src.trainer.base_trainer import BaseTrainer
 from src.trainer.ensemble_trainer import EnsembleTrainer
 from src.trainer.multi_forward_ensemble_trainer import MultiForwardEnsembleTrainer
@@ -52,8 +53,13 @@ def my_app(config: DictConfig) -> None:
         weight_method = METHODS[config.method.name](dm.num_tasks, **safe_pop(config.method))
     logging.info(f"I am using the following method {weight_method}")
 
+    if getattr(config.model, 'encoder', 'MultiLeNetR') == 'MixedCurvatureLeNetR':
+        encoder = MixedCurvatureLeNetR(in_channels=1)
+    else:
+        encoder = MultiLeNetR(in_channels=1)
+
     model = SharedBottom(
-        encoder=MultiLeNetR(in_channels=1),
+        encoder=encoder,
         decoder=MultiLeNetO(),
         task_names=dm.task_names,
     )

@@ -1,5 +1,6 @@
 import copy
 import json
+import logging
 import os
 from typing import TYPE_CHECKING
 
@@ -176,11 +177,11 @@ class ParetoFrontVisualizerCallback(Callback):
 
             if "loss" in x_label and "loss" in y_label:
                 uniformity = compute_uniformity(x, y)
-                print(f"Uniformity: {uniformity}")
+                logging.info(f"Uniformity: {uniformity}")
                 hypervolume = compute_hypervolume(np.array([x, y]).T, xmax=MAPPING[x_label], ymax=MAPPING[y_label])
-                print(f"Hypervolume: {hypervolume}")
+                logging.info(f"Hypervolume: {hypervolume}")
                 spearman = spearmanr(x, y)
-                print(f"Spearman: {spearman.statistic}")
+                logging.info(f"Spearman: {spearman.statistic}")
 
                 num_non_dominated = get_num_non_dominated(
                     np.array([x, y]).T, xmax=MAPPING[x_label], ymax=MAPPING[y_label]
@@ -222,7 +223,7 @@ class ParetoFrontVisualizerCallback(Callback):
                 population_results["spearman"] = spearman.statistic
                 population_results["num_non_dominated"] = num_non_dominated
 
-                print(population_results)
+                logging.info(f"Population results: {population_results}")
 
         return population_results
 

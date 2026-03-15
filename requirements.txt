@@ -21,3 +21,4 @@ torchmetrics==0.10.3
 torchvision==0.15.2
 tqdm==4.66.4
 tqdm==4.65.0
+geoopt>=0.4.0
