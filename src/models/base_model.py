@@ -62,9 +62,6 @@ class SharedBottom(BaseModel):
         if hasattr(self, 'mc_encoder_block'):
             embedding = self.mc_encoder_block(embedding)
 
-        if hasattr(self, 'mc_decoder_block'):
-            embedding = self.mc_decoder_block(embedding)
-
         if ray is None:
             task_outs = {k: d(embedding) for k, d in self.decoders.items()}
         else:

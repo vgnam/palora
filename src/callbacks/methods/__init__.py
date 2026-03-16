@@ -11,10 +11,12 @@ from .ls import LinearScalarization
 from .mgda import MGDA
 from .nashmtl import NashMTL
 from .palora import PaLoRA, PaLoRA_GB, PaLoRA_LB, PaLoRAFull
+from .palora_qd import PaLoRAQD
 
 #
 from .pamal import PaMaL, PaMaL_GB, PaMaL_LB
 from .pamal_mc_div import PaMaLMCDiv
+from .pamal_qd import PaMaLQD
 from .pcgrad import PCGrad
 from .rlw import RandomLossWeighting
 from .si import ScaleInvariantLinearScalarization
@@ -46,10 +48,12 @@ METHODS = dict(
     pamal_lb=PaMaL_LB,
     pamal_gb=PaMaL_GB,
     pamal_mc_div=PaMaLMCDiv,
+    pamal_qd=PaMaLQD,
     palora=PaLoRA,
     palora_lb=PaLoRA_LB,
     palora_gb=PaLoRA_GB,
     palora_full=PaLoRAFull,
+    palora_qd=PaLoRAQD,
     cosmos=COSMOS,
     phn=ParetoHyperNetwork,
     #
@@ -64,10 +68,12 @@ PFL_METHODS = dict(
     pamal_lb=PaMaL_LB,
     pamal_gb=PaMaL_GB,
     pamal_mc_div=PaMaLMCDiv,
+    pamal_qd=PaMaLQD,
     palora=PaLoRA,
     palora_lb=PaLoRA_LB,
     palora_gb=PaLoRA_GB,
     palora_full=PaLoRAFull,
+    palora_qd=PaLoRAQD,
     cosmos=COSMOS,
     phn=ParetoHyperNetwork,
     #
@@ -81,6 +87,9 @@ PFL_METHODS = dict(
 def get_method(name, num_tasks, **kwargs) -> AlgoCallback:
     if "palora" not in name and "pamal" not in name and "padora" not in name:
         return METHODS[name](num_tasks, **kwargs)
+
+    if name == "palora_qd":
+        return PaLoRAQD(num_tasks=num_tasks, **kwargs)
 
     if "palora" in name:
         inner_method = kwargs.get("inner_method")
@@ -97,6 +106,9 @@ def get_method(name, num_tasks, **kwargs) -> AlgoCallback:
 
     if name == "pamal_mc_div":
         return PaMaLMCDiv(num_tasks, **kwargs)
+
+    if name == "pamal_qd":
+        return PaMaLQD(num_tasks=num_tasks, **kwargs)
 
     if "pamal" in name:
         inner_method = kwargs.get("inner_method")

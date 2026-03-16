@@ -1,0 +1,12 @@
+name: pamal_qd
+validate_models: 11
+reinit_flag: true
+num: 3
+reg_coefficient: 1
+inner_method: gb
+p: 7
+
+# Soft QD params
+qd_coefficient: 0.1
+sigma: 1.0
+ema_tau: 0.01

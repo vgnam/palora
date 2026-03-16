@@ -64,26 +64,22 @@ class PaMaLMCDiv(PaMaL):
         )
 
     def configure_model(self, model, data_module=None, keep_original_weights=False) -> nn.Module:
-        """Configure model: apply PaMaL subspace + attach MC blocks."""
+        """Configure model: apply PaMaL subspace + attach MC encoder block."""
         # 1. Apply PaMaL subspace conversion (LeNet + decoders)
         super().configure_model(model, data_module, keep_original_weights)
 
-        # 2. Attach MC blocks to the model
+        # 2. Attach MC encoder block to the model (no MC decoder)
         model.mc_encoder_block = MixedCurvatureBlock(
             dim=self.embed_dim, num_subspaces=self.num_subspaces
         )
-        model.mc_decoder_block = MixedCurvatureBlock(
-            dim=self.embed_dim, num_subspaces=self.num_subspaces
-        )
 
-        # Prevent PaMaL's make_subspace_compatible from touching MC blocks
+        # Prevent PaMaL's make_subspace_compatible from touching MC block
         model.mc_encoder_block._skip_lorafy = True
-        model.mc_decoder_block._skip_lorafy = True
 
-        # Storage for MC embeddings across rays (for diversity loss)
+        # Storage for embeddings across rays (for diversity loss)
         model._mc_embeddings = []
 
-        logging.info("PaMaL-MC-Div: Attached MC encoder/decoder blocks to model")
+        logging.info("PaMaL-MC-Div: Attached MC encoder block to model (no decoder)")
         return model
 
     def compute_diversity_loss(self, trainer: "BaseTrainer") -> torch.Tensor:

@@ -1,0 +1,18 @@
+name: palora_qd
+validate_models: 11
+reinit_flag: true
+num: 4
+reg_coefficient: 0
+inner_method: ls
+
+# LoRA params
+rank: 1
+reweight_lr: true
+
+# concentration parameter for Dirichlet distribution
+p: 1
+
+# Soft QD params
+qd_coefficient: 0.1    # γ: weight of Soft QD loss
+sigma: 1.0              # kernel bandwidth
+ema_tau: 0.01           # EMA rate for target encoder

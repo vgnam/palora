@@ -1,0 +1,15 @@
+name: palora_qd
+validate_models: 11
+reinit_flag: true
+num: 1
+reg_coefficient: 0
+inner_method: ls
+p: 1
+rank: 4
+reweight_lr: true
+lora_alpha: 1
+
+# Soft QD params
+qd_coefficient: 0.1
+sigma: 1.0
+ema_tau: 0.01
