@@ -1,22 +1,29 @@
 """
-PaMaL-QD: PaMaL + Soft Quality-Diversity (SQUAD Paper).
+PaMaL-QD: PaMaL + Soft Quality-Diversity with Momentum Target Encoder.
 
-Integrates the Soft QD objective from Hedayatian & Nikolaidis into PaMaL.
-The QD loss is computed on **online encoder** embeddings so that gradients
-flow through both the fitness (quality) and behavior descriptor (diversity) terms.
+Two-stream architecture:
+  Stream 1 (Online): Standard PaMaL forward → task losses + weighted loss
+  Stream 2 (Target): Frozen EMA encoder → stable behavior embeddings for QD
 
-Key difference from naive integration:
-  - Online encoder embeddings are used WITH gradients for the QD loss
-  - Adaptive σ² via nearest-neighbor distance (as in the paper)
-  - Quality = exp(-avg_task_loss), non-negative as required
+Algorithm (per training step):
+  1. Sample W α-vectors from Dir(p)                    [PaMaL]
+  2. Materialize: x_i = α_iᵀΘ                          [PaMaL]
+  3. Forward online encoder: ŷ_i = model(x_i; ray_i)   → task losses L_i
+  4. Forward target encoder: z⁻_i = enc⁻(x_i; ray_i)   → stable embeddings (no grad)
+  5. Quality: f_i = exp(-L̄_i)  (WITH gradient through L_i)
+  6. Soft QD: A = Σ f_i − Σ_{i<j} √(f_i·f_j) · K(z⁻_i, z⁻_j)
+  7. L_total = PaMaL_loss + γ · (-A)
+  8. Backprop → gradient flows through f_i → online encoder
+  9. EMA update: φ⁻ ← τ·φ + (1−τ)·φ⁻
 
-Paper objective:
-  A(θ) = Σ f_i  −  Σ_{i<j} √(f_i · f_j) · K(b_i, b_j)
-  K(b_i, b_j) = exp(-||b_i - b_j||² / σ²)
-
-Loss = -A (minimize to maximize archive quality + diversity)
+Gradient analysis:
+  ∂(-A)/∂θ = -Σ ∂f_i/∂θ + Σ_{i<j} K_ij · ∂√(f_i·f_j)/∂θ
+  where K_ij is CONSTANT (from target encoder) → acts as weight
+  → Pushes online encoder to: improve quality + differentiate
+    quality when solutions are close in behavior space
 """
 
+import copy
 import logging
 from typing import TYPE_CHECKING
 
@@ -32,16 +39,16 @@ if TYPE_CHECKING:
 
 
 class PaMaLQD(PaMaL):
-    """PaMaL with Soft Quality-Diversity loss (SQUAD paper).
+    """PaMaL with Soft Quality-Diversity loss using momentum target encoder.
 
-    Each training step:
-      1. PaMaL samples W rays, does W forward passes (online encoder + decoders)
-      2. We store per-ray online encoder embeddings (WITH grad)
-      3. Before backward, compute Soft QD loss on these embeddings
-      4. L_total = PaMaL_loss + γ · L_softqd
-      5. Backprop updates encoder to improve both task quality AND diversity
+    Architecture:
+        Online:  encoder (subspace) → decoders  [trained normally by PaMaL]
+        Target:  encoder (EMA copy, frozen)      [provides stable z for QD kernel]
 
-    σ² is adapted each step using mean nearest-neighbor distance in behavior space.
+    The QD loss gradient flows ONLY through the quality scores f_i = exp(-loss_i),
+    NOT through the behavior descriptors z⁻_i (which are from the frozen target encoder).
+    The kernel K(z⁻_i, z⁻_j) acts as a constant weight that determines which
+    pairs of solutions should be encouraged to have different qualities.
     """
 
     def __init__(
@@ -54,23 +61,51 @@ class PaMaLQD(PaMaL):
     ):
         super().__init__(**kwargs)
         self.qd_coefficient = qd_coefficient
-        self.sigma_sq = sigma ** 2  # σ²
+        self.sigma_sq = sigma ** 2
         self.ema_tau = ema_tau
         self.adaptive_sigma = adaptive_sigma
 
-        # Storage for per-ray data (populated during forward passes)
-        self._ray_embeddings = []  # online encoder embeddings WITH grad
-        self._ray_losses = []  # per-ray avg task losses (detached for quality)
+        self._target_encoder = None  # initialized in configure_model
+
+    # ─── Model Setup ──────────────────────────────────────────────────
 
     def configure_model(self, model, data_module=None, keep_original_weights=False) -> nn.Module:
-        """Configure model: apply PaMaL subspace conversion."""
+        """Apply PaMaL subspace conversion + create frozen target encoder."""
+        # 1. PaMaL subspace conversion (modifies model.encoder in-place)
         super().configure_model(model, data_module, keep_original_weights)
 
+        # 2. Create target encoder = deep copy of online encoder (frozen)
+        self._target_encoder = copy.deepcopy(model.encoder)
+        for param in self._target_encoder.parameters():
+            param.requires_grad = False
+        self._target_encoder.eval()
+
+        # 3. Storage for per-ray inputs
+        model._qd_inputs = []
+
         logging.info(
-            f"PaMaL-QD: QD coeff={self.qd_coefficient}, σ²={self.sigma_sq}, "
+            f"PaMaL-QD: target encoder (EMA τ={self.ema_tau}), "
+            f"γ={self.qd_coefficient}, σ²={self.sigma_sq}, "
             f"adaptive_σ={self.adaptive_sigma}"
         )
         return model
+
+    def configure_param_groups(self, model: nn.Module, lr=None):
+        """Target encoder is on self (not model) and frozen → not in optimizer."""
+        return super().configure_param_groups(model, lr=lr)
+
+    # ─── Target Encoder EMA ──────────────────────────────────────────
+
+    @torch.no_grad()
+    def _ema_update_target_encoder(self, online_encoder: nn.Module):
+        """EMA update: φ⁻ ← τ·φ + (1−τ)·φ⁻"""
+        tau = self.ema_tau
+        for p_online, p_target in zip(
+            online_encoder.parameters(), self._target_encoder.parameters()
+        ):
+            p_target.data.mul_(1.0 - tau).add_(p_online.data, alpha=tau)
+
+    # ─── Soft QD Loss (SQUAD Paper) ──────────────────────────────────
 
     def compute_softqd_loss(
         self,
@@ -80,118 +115,116 @@ class PaMaLQD(PaMaL):
     ) -> torch.Tensor:
         """Compute Soft QD loss (SQUAD paper, Eq. 1).
 
-        A(θ) = Σ f_i  −  Σ_{i<j} √(f_i · f_j) · K(b_i, b_j)
+        A(θ) = Σ f_i  −  Σ_{i<j} √(f_i · f_j) · K(z⁻_i, z⁻_j)
 
         where:
-          - f_i = quality of solution i (non-negative, detached)
-          - b_i = behavior descriptor of solution i (encoder embedding, WITH grad)
-          - K(b_i, b_j) = exp(-||b_i - b_j||² / σ²) Gaussian kernel
-
-        Gradients flow through b_i (encoder params) via the kernel term.
+          f_i = quality of solution i        (WITH grad → drives diversity)
+          z⁻_i = target encoder embedding    (detached → stable behavior space)
+          K(z⁻_i, z⁻_j) = exp(-||z⁻_i - z⁻_j||² / σ²)
 
         Args:
-            embeddings: (W, D) online encoder embeddings per ray (requires_grad=True)
-            qualities: (W,) quality scores (detached, non-negative)
+            embeddings: (W, D) target encoder embeddings (detached, no grad)
+            qualities: (W,) quality scores f_i = exp(-loss_i) (WITH grad!)
 
         Returns:
-            Scalar loss = -A (to be minimized)
+            Scalar loss = -A (to be minimized by optimizer)
         """
         W = embeddings.shape[0]
         if W < 2:
             return torch.tensor(0.0, device=embeddings.device, requires_grad=True)
 
-        # Ensure non-negative fitness
-        f = qualities.clamp(min=eps)  # (W,)
+        f = qualities.clamp(min=eps)  # (W,) — HAS gradient
 
-        # Pairwise squared distances: ||b_i - b_j||²
-        # embeddings has grad → kernel will have grad → loss has grad w.r.t. encoder
-        D_sq = torch.cdist(embeddings, embeddings).pow(2)  # (W, W)
+        # ── Kernel from target encoder (constant, no grad) ──
+        with torch.no_grad():
+            D_sq = torch.cdist(embeddings, embeddings).pow(2)  # (W, W)
+            K = torch.exp(-D_sq / self.sigma_sq)               # (W, W)
 
-        # Gaussian kernel
-        K = torch.exp(-D_sq / self.sigma_sq)  # (W, W)
+            # Zero out self-interactions and negligible entries
+            K.fill_diagonal_(0.0)
+            K = K.masked_fill(K < eps, 0.0)
 
-        # Remove self-interactions (diagonal) and negligible entries
-        mask = torch.eye(W, device=K.device, dtype=torch.bool)
-        K = K.masked_fill(mask, 0.0)
-        K = K.masked_fill(K < eps, 0.0)
-
-        # Pairwise fitness product: √(f_i · f_j) — detached (no grad through f)
-        f_sqrt_prod = torch.sqrt(f.unsqueeze(0) * f.unsqueeze(1))  # (W, W)
-
-        # Repulsive term: Σ_{i<j} √(f_i·f_j) · K_ij (upper triangle)
-        repulsion = torch.triu(K * f_sqrt_prod, diagonal=1).sum()
-
-        # Attractive term: Σ f_i
-        attraction = f.sum()
-
-        # Objective A = attraction - repulsion → maximize
-        A = attraction - repulsion
-
-        # Adaptive σ² using mean nearest-neighbor distance
-        if self.adaptive_sigma:
-            with torch.no_grad():
-                # D_sq with self-distance set to inf
+            # Adaptive σ² using mean nearest-neighbor distance
+            if self.adaptive_sigma:
                 D_sq_no_self = D_sq.clone()
                 D_sq_no_self.fill_diagonal_(float('inf'))
                 nn_dists = D_sq_no_self.min(dim=1).values  # (W,)
-                new_sigma_sq = nn_dists.mean().clamp(min=eps).item()
-                self.sigma_sq = new_sigma_sq
+                self.sigma_sq = nn_dists.mean().clamp(min=eps).item()
 
-        return -A
+        # ── Attractive term: Σ f_i ──
+        attraction = f.sum()  # gradient through f
+
+        # ── Repulsive term: Σ_{i<j} √(f_i · f_j) · K_ij ──
+        # K_ij is constant (detached), gradient flows through √(f_i·f_j)
+        f_outer = f.unsqueeze(0) * f.unsqueeze(1)          # (W, W) — has grad
+        f_sqrt_prod = torch.sqrt(f_outer.clamp(min=eps))   # (W, W) — has grad
+        repulsion = torch.triu(K * f_sqrt_prod, diagonal=1).sum()  # scalar — has grad
+
+        # ── Objective A = attraction - repulsion ──
+        A = attraction - repulsion
+
+        return -A  # minimize -A = maximize A
+
+    # ─── Training Hooks ──────────────────────────────────────────────
 
     def on_before_forward(self, trainer: "BaseTrainer", *args, **kwargs):
-        """Called before each ray's forward pass. Clear storage on first ray."""
+        """Store input batch for target encoder forward (called per ray)."""
         super().on_before_forward(trainer, *args, **kwargs)
-
-        if self.qd_coefficient <= 0 or not trainer.model.training:
-            return
-
-        # On first ray of this training step, clear storage
-        # trainer.losses is [] at start, so len == 0 means first ray
-        if len(trainer.losses) == 0:
-            self._ray_embeddings = []
-            self._ray_losses = []
-
-    def on_after_forward(self, trainer: "BaseTrainer", *args, **kwargs):
-        """Called after each ray's forward. Store embedding WITH gradient."""
-        super().on_after_forward(trainer, *args, **kwargs)
-
-        if self.qd_coefficient <= 0 or not trainer.model.training:
-            return
-
-        # trainer.features = encoder output (before decoders), computed in model.forward()
-        # This tensor has requires_grad=True since it's part of the computation graph
-        if hasattr(trainer, 'features') and trainer.features is not None:
-            # Mean pool over batch → one embedding per ray
-            embedding = trainer.features.mean(dim=0)  # (D,) — keeps grad
-            self._ray_embeddings.append(embedding)
+        if self.qd_coefficient > 0 and trainer.model.training:
+            if not hasattr(trainer.model, '_qd_inputs'):
+                trainer.model._qd_inputs = []
+            # Store (x, ray) for target encoder forward in on_before_backward
+            trainer.model._qd_inputs.append(
+                (trainer.x.detach(), trainer.method.ray.detach())
+            )
 
     def on_before_backward(self, trainer: "BaseTrainer", *args, **kwargs):
-        """Add Soft QD loss to trainer.loss."""
+        """Compute Soft QD loss and add to trainer.loss.
+
+        Steps:
+          1. Forward stored inputs through target encoder (no grad) → embeddings
+          2. Compute quality f_i = exp(-avg_loss_i) WITH gradient
+          3. Compute A and add γ·(-A) to total loss
+        """
         super().on_before_backward(trainer, *args, **kwargs)
 
         if self.qd_coefficient <= 0 or not trainer.model.training:
             return
 
-        if len(self._ray_embeddings) < 2:
+        model = trainer.model
+        if not hasattr(model, '_qd_inputs') or len(model._qd_inputs) == 0:
             return
 
-        # Stack embeddings — these have grad since they come from online encoder
-        z_stack = torch.stack(self._ray_embeddings)  # (W, D)
+        # ── Step 4: Forward target encoder (no grad) → stable embeddings ──
+        target_embeddings = []
+        with torch.no_grad():
+            self._target_encoder.eval()
+            for x, ray in model._qd_inputs:
+                z = self._target_encoder(x, ray=ray)  # (B, D)
+                target_embeddings.append(z.mean(dim=0))  # (D,) mean-pool over batch
+        model._qd_inputs = []
 
-        # Compute quality scores from per-ray task losses (detached)
+        if len(target_embeddings) < 2:
+            return
+
+        z_stack = torch.stack(target_embeddings)  # (W, D) — detached
+
+        # ── Step 5: Quality scores f_i = exp(-avg_loss_i) WITH gradient ──
         # trainer.losses is list[dict], each dict: task_name → loss_tensor
+        # DO NOT detach: gradient flows through loss → f_i → QD loss → backprop
         qualities = []
         for loss_dict in trainer.losses:
             avg_loss = sum(loss_dict.values()) / len(loss_dict)
-            qualities.append(torch.exp(-avg_loss).detach())
-        qualities = torch.stack(qualities)  # (W,)
+            qualities.append(torch.exp(-avg_loss))  # NO .detach()!
+        qualities = torch.stack(qualities)  # (W,) — has grad
 
-        # Compute Soft QD loss
+        # ── Step 6: Soft QD loss ──
         qd_loss = self.compute_softqd_loss(z_stack, qualities)
+
+        # ── Step 7: Add to total loss ──
         trainer.loss = trainer.loss + self.qd_coefficient * qd_loss
 
-        # Log
+        # Logging
         trainer.qd_loss = qd_loss.item()
         try:
             wandb.log({
@@ -202,6 +235,16 @@ class PaMaLQD(PaMaL):
         except Exception:
             pass
 
-        # Clear storage
-        self._ray_embeddings = []
-        self._ray_losses = []
+    # ─── Step 9: EMA Update ──────────────────────────────────────────
+
+    def on_after_optimizer_step(self, trainer: "BaseTrainer", *args, **kwargs):
+        """EMA update target encoder after each optimization step."""
+        super().on_after_optimizer_step(trainer, *args, **kwargs)
+        if self._target_encoder is not None:
+            self._ema_update_target_encoder(trainer.model.encoder)
+
+    def connect(self, trainer: "BaseTrainer"):
+        """Move target encoder to device when trainer connects."""
+        super().connect(trainer)
+        if self._target_encoder is not None:
+            self._target_encoder = self._target_encoder.to(trainer.device)
