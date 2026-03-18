@@ -2,6 +2,7 @@
 from typing import Iterator, List, Tuple, Union
 
 import numpy as np
+import torch
 import torch.nn as nn
 
 from src.models.base_model import BaseModel
@@ -13,7 +14,7 @@ from .phn_segnet import SegNetHyper, SegNetTarget
 
 
 class HyperModel(BaseModel):
-    def __init__(self, dataset_name):
+    def __init__(self, dataset_name, task_names=None):
         super().__init__()
         dataset_name = dataset_name.lower()
         if "census" in dataset_name:
@@ -38,16 +39,40 @@ class HyperModel(BaseModel):
         self.hnet = hnet
         self.net = net
         self.ray = None
+        self.task_names = task_names
 
-    def forward(self, x, *args, **kwargs):
+    def forward(self, x, ray=None, return_embedding=False):
+        if ray is not None:
+            self.ray = ray
+        # Ensure ray is on the same device as the model
+        if isinstance(self.ray, torch.Tensor):
+            device = next(self.hnet.parameters()).device
+            self.ray = self.ray.to(device)
+            if self.ray.dim() > 1:
+                self.ray = self.ray.squeeze(0)
         weights = self.hnet(self.ray)
-        return self.net(x, weights), dict()
+        outputs = self.net(x, weights)
+
+        # Convert list/tuple outputs to dict keyed by task names
+        if isinstance(outputs, (list, tuple)):
+            if self.task_names is not None:
+                task_outs = {name: out for name, out in zip(self.task_names, outputs)}
+            else:
+                task_outs = {str(i): out for i, out in enumerate(outputs)}
+        elif isinstance(outputs, dict):
+            task_outs = outputs
+        else:
+            task_outs = outputs
+
+        if return_embedding:
+            return task_outs, None
+        return task_outs
 
     def shared_parameters(self) -> Iterator[nn.parameter.Parameter]:
         return self.hnet.parameters()
 
     def task_specific_parameters(self) -> Iterator[nn.parameter.Parameter]:
-        return []
+        return iter([])
 
     def last_shared_parameters(self) -> Iterator[nn.parameter.Parameter]:
-        return []
+        return iter([])

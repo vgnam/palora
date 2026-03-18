@@ -1,4 +1,7 @@
-name: phn
-alpha: 1
-solver: linear
-# solver: epo
+# @package _global_
+
+method:
+  name: phn
+  solver: linear
+  ray_hidden_dim: 100
+  num: 1

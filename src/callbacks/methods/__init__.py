@@ -88,6 +88,9 @@ PFL_METHODS = dict(
 
 
 def get_method(name, num_tasks, **kwargs) -> AlgoCallback:
+    if name == "phn":
+        return ParetoHyperNetwork(num_tasks=num_tasks, **kwargs)
+
     if "palora" not in name and "pamal" not in name and "padora" not in name:
         return METHODS[name](num_tasks, **kwargs)
 
