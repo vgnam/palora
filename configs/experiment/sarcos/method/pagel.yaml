@@ -1,0 +1,25 @@
+# @package _global_
+
+method:
+  name: pagel
+  reinit_flag: true
+  num: 2
+  reg_coefficient: 5
+  # PaGeL-specific
+  euclidean_dim: 16
+  hyperbolic_dim: 16
+  spherical_dim: 16
+  generator_hidden_dims: [128, 128]
+  lambda_geo: 0.01
+  lambda_tangent: 1.0
+  lambda_metric: 0.1
+  num_subspaces: 5
+  learnable_curvature: true
+  init_curvature: 0.1
+  geo_warmup_epochs: 0
+
+ray_sampler:
+  name: annealing_deterministic
+  _target_: src.callbacks.methods.utils.samplers.AnnealingSampler
+  mul: 5
+  epsilon: 0.01

@@ -17,6 +17,7 @@ from .palora_qd import PaLoRAQD
 from .pamal import PaMaL, PaMaL_GB, PaMaL_LB
 from .pamal_mc_div import PaMaLMCDiv
 from .pamal_qd import PaMaLQD
+from .pagel import PaGeL
 from .pcgrad import PCGrad
 from .rlw import RandomLossWeighting
 from .si import ScaleInvariantLinearScalarization
@@ -49,6 +50,7 @@ METHODS = dict(
     pamal_gb=PaMaL_GB,
     pamal_mc_div=PaMaLMCDiv,
     pamal_qd=PaMaLQD,
+    pagel=PaGeL,
     palora=PaLoRA,
     palora_lb=PaLoRA_LB,
     palora_gb=PaLoRA_GB,
@@ -69,6 +71,7 @@ PFL_METHODS = dict(
     pamal_gb=PaMaL_GB,
     pamal_mc_div=PaMaLMCDiv,
     pamal_qd=PaMaLQD,
+    pagel=PaGeL,
     palora=PaLoRA,
     palora_lb=PaLoRA_LB,
     palora_gb=PaLoRA_GB,
@@ -106,6 +109,9 @@ def get_method(name, num_tasks, **kwargs) -> AlgoCallback:
 
     if name == "pamal_mc_div":
         return PaMaLMCDiv(num_tasks, **kwargs)
+
+    if name == "pagel":
+        return PaGeL(num_tasks=num_tasks, **kwargs)
 
     if name == "pamal_qd":
         return PaMaLQD(num_tasks=num_tasks, **kwargs)
